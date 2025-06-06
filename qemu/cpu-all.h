@@ -445,6 +445,7 @@ void run_on_cpu(CPUState *env, void (*func)(void *data), void *data);
 #define CPU_LOG_IOPORT     (1 << 7)
 #define CPU_LOG_TB_CPU     (1 << 8)
 #define CPU_LOG_RESET      (1 << 9)
+#define CPU_LOG_X86_TRANS  (1 << 10)
 
 /* define log items */
 typedef struct CPULogItem {
