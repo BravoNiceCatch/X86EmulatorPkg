@@ -2149,6 +2149,8 @@ static inline int tcg_gen_code_common(TCGContext *s, uint8_t *gen_code_buf,
 
 int tcg_gen_code(TCGContext *s, uint8_t *gen_code_buf)
 {
+    int code_size;
+
 #ifdef CONFIG_PROFILER
     {
         int n;
@@ -2163,12 +2165,45 @@ int tcg_gen_code(TCGContext *s, uint8_t *gen_code_buf)
     }
 #endif
 
+    /* Log TCG code generation start */
+    if (unlikely(qemu_loglevel_mask(CPU_LOG_X86_TRANS))) {
+        qemu_log("[X86_TRANS] TCG: Starting code generation at buffer=0x%p\n", gen_code_buf);
+    }
+
     tcg_gen_code_common(s, gen_code_buf, -1);
 
+    code_size = s->code_ptr - gen_code_buf;
+
+    /* Log generated AArch64 code details */
+    if (unlikely(qemu_loglevel_mask(CPU_LOG_X86_TRANS))) {
+        qemu_log("[X86_TRANS] TCG: Generated AArch64 code: addr=0x%p size=%d bytes\n",
+                 gen_code_buf, code_size);
+
+        /* Optionally dump the generated machine code in hex */
+        if (code_size > 0 && code_size <= 256) {  /* Limit dump size */
+            int i;
+            qemu_log("[X86_TRANS] TCG: Machine code: ");
+            for (i = 0; i < code_size; i += 4) {
+                if (i + 4 <= code_size) {
+                    uint32_t *insn = (uint32_t*)(gen_code_buf + i);
+                    qemu_log("%08x ", *insn);
+                } else {
+                    /* Handle partial instruction at end */
+                    int j;
+                    for (j = i; j < code_size; j++) {
+                        qemu_log("%02x", gen_code_buf[j]);
+                    }
+                }
+                if ((i + 4) % 16 == 0) qemu_log("\n[X86_TRANS] TCG:                ");
+            }
+            qemu_log("\n");
+        }
+    }
+
     /* flush instruction cache */
-    flush_icache_range((unsigned long)gen_code_buf, 
+    flush_icache_range((unsigned long)gen_code_buf,
                        (unsigned long)s->code_ptr);
-    return s->code_ptr -  gen_code_buf;
+    return code_size;
 }
 
 /* Return the index of the micro operation such as the pc after is <

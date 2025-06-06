@@ -942,10 +942,20 @@ TranslationBlock *tb_gen_code(CPUState *env,
     target_ulong virt_page2;
     int code_gen_size;
 
+    /* Log TB creation start */
+    if (unlikely(qemu_loglevel_mask(CPU_LOG_X86_TRANS))) {
+        qemu_log("[X86_TRANS] TB: Creating new translation block for PC=0x" TARGET_FMT_lx
+                 " cs_base=0x" TARGET_FMT_lx " flags=0x%x cflags=0x%x\n",
+                 pc, cs_base, flags, cflags);
+    }
+
     phys_pc = get_page_addr_code(env, pc);
     tb = tb_alloc(pc);
     if (!tb) {
         /* flush must be done */
+        if (unlikely(qemu_loglevel_mask(CPU_LOG_X86_TRANS))) {
+            qemu_log("[X86_TRANS] TB: Translation buffer full, flushing all TBs\n");
+        }
         tb_flush(env);
         /* cannot fail at this point */
         tb = tb_alloc(pc);
@@ -957,6 +967,13 @@ TranslationBlock *tb_gen_code(CPUState *env,
     tb->cs_base = cs_base;
     tb->flags = flags;
     tb->cflags = cflags;
+
+    /* Log TB details before code generation */
+    if (unlikely(qemu_loglevel_mask(CPU_LOG_X86_TRANS))) {
+        qemu_log("[X86_TRANS] TB: Allocated TB at 0x%p, code buffer at 0x%p, phys_pc=0x" TARGET_FMT_lx "\n",
+                 tb, tc_ptr, phys_pc);
+    }
+
     cpu_gen_code(env, tb, &code_gen_size);
     code_gen_ptr = (void *)(((unsigned long)code_gen_ptr + code_gen_size + CODE_GEN_ALIGN - 1) & ~(CODE_GEN_ALIGN - 1));
 
@@ -967,6 +984,14 @@ TranslationBlock *tb_gen_code(CPUState *env,
         phys_page2 = get_page_addr_code(env, virt_page2);
     }
     tb_link_page(tb, phys_pc, phys_page2);
+
+    /* Log completed TB creation */
+    if (unlikely(qemu_loglevel_mask(CPU_LOG_X86_TRANS))) {
+        qemu_log("[X86_TRANS] TB: Created TB at 0x%p, size=%d bytes, code_size=%d bytes, "
+                 "phys_pc=0x" TARGET_FMT_lx " phys_page2=0x" TARGET_FMT_lx "\n",
+                 tb, tb->size, code_gen_size, phys_pc, phys_page2);
+    }
+
     return tb;
 }
 
@@ -1677,6 +1702,8 @@ const CPULogItem cpu_log_items[] = {
     { CPU_LOG_IOPORT, "ioport",
       "show all i/o ports accesses" },
 #endif
+    { CPU_LOG_X86_TRANS, "x86_trans",
+      "show detailed x86 to AArch64 instruction translation" },
     { 0, NULL, NULL },
 };
 

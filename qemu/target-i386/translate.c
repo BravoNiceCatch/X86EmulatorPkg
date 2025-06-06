@@ -4075,6 +4075,36 @@ static void gen_sse(DisasContext *s, int b, target_ulong pc_start, int rex_r)
     }
 }
 
+/* Helper function to log x86 instruction details */
+static void log_x86_instruction(target_ulong pc, uint8_t *insn_bytes, int insn_len,
+                                 int prefixes, const char *mnemonic)
+{
+    if (unlikely(qemu_loglevel_mask(CPU_LOG_X86_TRANS))) {
+        int i;
+        qemu_log("[X86_TRANS] PC=0x" TARGET_FMT_lx " ", pc);
+
+        /* Log instruction bytes */
+        qemu_log("bytes=[");
+        for (i = 0; i < insn_len && i < 15; i++) {
+            qemu_log("%02x", insn_bytes[i]);
+            if (i < insn_len - 1 && i < 14) qemu_log(" ");
+        }
+        qemu_log("] ");
+
+        /* Log prefixes */
+        if (prefixes) {
+            qemu_log("prefixes=0x%x ", prefixes);
+        }
+
+        /* Log mnemonic if provided */
+        if (mnemonic) {
+            qemu_log("insn=%s", mnemonic);
+        }
+
+        qemu_log("\n");
+    }
+}
+
 /* convert one instruction. s->is_jmp is set if the translation must
    be stopped. Return the next pc value */
 static target_ulong disas_insn(DisasContext *s, target_ulong pc_start)
@@ -4084,10 +4114,24 @@ static target_ulong disas_insn(DisasContext *s, target_ulong pc_start)
     int modrm, reg, rm, mod, reg_addr, op, opreg, offset_addr, val;
     target_ulong next_eip, tval;
     int rex_w, rex_r;
+    uint8_t insn_start_bytes[16];  /* Buffer to store instruction bytes for logging */
+    target_ulong insn_start_pc;
 
     if (unlikely(qemu_loglevel_mask(CPU_LOG_TB_OP)))
         tcg_gen_debug_insn_start(pc_start);
+
+    /* Store instruction start for logging */
+    insn_start_pc = pc_start;
     s->pc = pc_start;
+
+    /* Copy instruction bytes for logging */
+    if (unlikely(qemu_loglevel_mask(CPU_LOG_X86_TRANS))) {
+        int i;
+        for (i = 0; i < 16; i++) {
+            insn_start_bytes[i] = ldub_code(pc_start + i);
+        }
+    }
+
     prefixes = 0;
     aflag = s->code32;
     dflag = s->code32;
@@ -7630,12 +7674,26 @@ static target_ulong disas_insn(DisasContext *s, target_ulong pc_start)
     /* lock generation */
     if (s->prefix & PREFIX_LOCK)
         gen_helper_unlock();
+
+    /* Log the completed instruction translation */
+    if (unlikely(qemu_loglevel_mask(CPU_LOG_X86_TRANS))) {
+        int insn_len = s->pc - insn_start_pc;
+        log_x86_instruction(insn_start_pc, insn_start_bytes, insn_len, s->prefix, "decoded");
+    }
+
     return s->pc;
  illegal_op:
     if (s->prefix & PREFIX_LOCK)
         gen_helper_unlock();
     /* XXX: ensure that no lock was generated */
     gen_exception(s, EXCP06_ILLOP, pc_start - s->cs_base);
+
+    /* Log illegal instruction */
+    if (unlikely(qemu_loglevel_mask(CPU_LOG_X86_TRANS))) {
+        int insn_len = s->pc - insn_start_pc;
+        log_x86_instruction(insn_start_pc, insn_start_bytes, insn_len, s->prefix, "ILLEGAL");
+    }
+
     return s->pc;
 }
 
